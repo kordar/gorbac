@@ -1,0 +1,5 @@
+!.gitignore!
+.idea
+main.go
+conf
+data
