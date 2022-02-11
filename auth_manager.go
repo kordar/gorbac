@@ -410,8 +410,9 @@ func (manager *DbManager) GetRule(name string) *Rule {
 }
 
 func (manager *DbManager) GetRules() []*Rule {
-	if manager.rules != nil {
-		rules := make([]*Rule, len(manager.rules))
+	length := len(manager.rules)
+	if manager.rules != nil && length > 0 {
+		rules := make([]*Rule, length)
 		for _, rule := range manager.rules {
 			rules = append(rules, rule)
 		}
@@ -1002,7 +1003,7 @@ func (manager *DbManager) checkRuleExits(name string) {
 	}
 }
 
-func (manager *DbManager) setDefaultRoles(roles ...*Role) {
+func (manager *DbManager) SetDefaultRoles(roles ...*Role) {
 	for _, role := range roles {
 		manager.defaultRoles[role.GetName()] = role
 	}

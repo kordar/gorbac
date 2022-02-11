@@ -41,9 +41,7 @@ func (container *container) GetExecutor(name string) Executor {
 	return container.content[name]
 }
 
-/*
- executor item
-*/
+// ItemType /*
 type ItemType int32
 
 func (t ItemType) Value() int32 {
