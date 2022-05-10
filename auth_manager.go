@@ -271,6 +271,11 @@ type AuthManager interface {
 	 * Removes all role assignments.
 	 */
 	RemoveAllAssignments()
+
+	/**
+	 * Remove all role assignments by user
+	 */
+	RemoveAllAssignmentByUser(userId int64) error
 }
 
 /**
@@ -345,7 +350,7 @@ type DbManager struct {
 }
 
 func NewDbManager(mapper AuthRepository, cache bool) *DbManager {
-	return &DbManager{mapper: mapper, cache: cache, _checkAccessAssignments: make(map[int64]map[string]*Assignment)}
+	return &DbManager{mapper: mapper, cache: cache, _checkAccessAssignments: make(map[int64]map[string]*Assignment), defaultRoles: make(map[string]*Role)}
 }
 
 func (manager *DbManager) invalidateCache() {
@@ -955,6 +960,12 @@ func (manager *DbManager) Add(item Item) bool {
 
 func (manager *DbManager) Remove(item Item) bool {
 	return manager.removeItem(item)
+}
+
+func (manager *DbManager) RemoveAllAssignmentByUser(userId int64) error {
+	err := manager.mapper.RemoveAllAssignmentByUser(userId)
+	manager.invalidateCache()
+	return err
 }
 
 func (manager *DbManager) Update(name string, item Item) bool {
