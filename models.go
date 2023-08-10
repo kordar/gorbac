@@ -2,6 +2,19 @@ package gorbac
 
 import "time"
 
+var tableNames = map[string]string{
+	"rule":       "auth_rule",
+	"item":       "auth_item",
+	"item-child": "auth_item_child",
+	"assignment": "auth_assignment",
+}
+
+func SetTableName(key string, value string) {
+	if tableNames[key] != "" {
+		tableNames[key] = value
+	}
+}
+
 type AuthRule struct {
 	Name        string `gorm:"type:varchar(64);primary_key"`
 	ExecuteName string
@@ -10,7 +23,7 @@ type AuthRule struct {
 }
 
 func (t *AuthRule) TableName() string {
-	return "auth_rule"
+	return tableNames["rule"]
 }
 
 type AuthItem struct {
@@ -25,7 +38,7 @@ type AuthItem struct {
 }
 
 func (t *AuthItem) TableName() string {
-	return "auth_item"
+	return tableNames["item"]
 }
 
 type AuthItemChild struct {
@@ -36,16 +49,16 @@ type AuthItemChild struct {
 }
 
 func (t *AuthItemChild) TableName() string {
-	return "auth_item_child"
+	return tableNames["item-child"]
 }
 
 type AuthAssignment struct {
 	AuthItem  AuthItem `gorm:"foreignkey:ItemName;association_foreignkey:Name"`
 	ItemName  string   `gorm:"type:varchar(64);primary_key"`
-	UserId    int64   `gorm:"primary_key;index"`
+	UserId    int64    `gorm:"primary_key;index"`
 	CreatedAt time.Time
 }
 
 func (t *AuthAssignment) TableName() string {
-	return "auth_assignment"
+	return tableNames["assignment"]
 }
