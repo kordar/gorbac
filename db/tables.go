@@ -2,8 +2,8 @@ package db
 
 var tableNames = map[string]string{
 	"rule":       "auth_rule",
-	"base":       "auth_item",
-	"base-child": "auth_item_child",
+	"item":       "auth_item",
+	"item-child": "auth_item_child",
 	"assignment": "auth_assignment",
 }
 
@@ -12,4 +12,8 @@ func SetTableName(key string, value string) {
 	if tableNames[key] != "" {
 		tableNames[key] = value
 	}
+}
+
+func GetTableName(key string) string {
+	return tableNames[key]
 }

@@ -318,8 +318,8 @@ func (manager *DbManager) detectLoop(parent base.Item, child base.Item) bool {
 
 	children := manager.GetChildren(child.GetName())
 	if children != nil {
-		for _, child := range children {
-			if manager.detectLoop(parent, child) {
+		for _, child2 := range children {
+			if manager.detectLoop(parent, child2) {
 				return true
 			}
 		}
@@ -638,6 +638,9 @@ func (manager *DbManager) Update(name string, item base.Item) bool {
 
 func (manager *DbManager) GetRole(name string) *base.Role {
 	item := manager.getItem(name)
+	if item == nil {
+		return nil
+	}
 	return base.NewRole(item.GetName(), item.GetDescription(), item.GetRuleName(), item.GetExecuteName(), item.GetCreateTime(), item.GetUpdateTime())
 }
 
