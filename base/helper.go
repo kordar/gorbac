@@ -1,14 +1,14 @@
 package base
 
-func MergePermissions(list1 []*base.Permission, list2 []*base.Permission) []*base.Permission {
-	m := make(map[string]*base.Permission)
+func MergePermissions(list1 []*Permission, list2 []*Permission) []*Permission {
+	m := make(map[string]*Permission)
 	for _, permission := range list1 {
 		m[permission.Name] = permission
 	}
 	for _, permission := range list2 {
 		m[permission.Name] = permission
 	}
-	permissions := make([]*base.Permission, len(m))
+	permissions := make([]*Permission, len(m))
 	for _, permission := range m {
 		permissions = append(permissions, permission)
 	}

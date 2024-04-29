@@ -7,12 +7,11 @@ import (
 
 // ToItem AuthItem转item对象
 func ToItem(item AuthItem) base.Item {
-	switch item.Type {
-	case base.RoleType.Value():
+	if base.RoleType.Value() == item.Type {
 		return base.NewRole(item.Name, item.Description, item.RuleName, item.ExecuteName, item.CreateTime, item.UpdateTime)
+	} else {
+		return base.NewPermission(item.Name, item.Description, item.RuleName, item.ExecuteName, item.CreateTime, item.UpdateTime)
 	}
-
-	return base.NewPermission(item.Name, item.Description, item.RuleName, item.ExecuteName, item.CreateTime, item.UpdateTime)
 }
 
 func ToRole(item AuthItem) base.Role {
