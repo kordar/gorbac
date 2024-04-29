@@ -2,7 +2,6 @@ package db
 
 import (
 	"github.com/kordar/gorbac/base"
-	"github.com/spf13/cast"
 )
 
 // ToItem AuthItem转item对象
@@ -48,7 +47,7 @@ func ToAuthItemChild(parent string, child string) AuthItemChild {
 func ToAuthAssignment(assignment base.Assignment) AuthAssignment {
 	return AuthAssignment{
 		ItemName:   assignment.ItemName,
-		UserId:     cast.ToString(assignment.UserId),
+		UserId:     assignment.UserId,
 		CreateTime: assignment.CreateTime,
 	}
 }

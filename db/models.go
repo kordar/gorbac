@@ -44,10 +44,10 @@ func (t *AuthItemChild) TableName() string {
 
 // AuthAssignment 用户赋权，userId->关联权限
 type AuthAssignment struct {
-	AuthItem   AuthItem  `gorm:"foreignkey:ItemName;association_foreignkey:Name" json:"auth_item"`
-	ItemName   string    `gorm:"type:varchar(64);primary_key" json:"item_name"`
-	UserId     string    `gorm:"type:varchar(32);primary_key;index" json:"user_id"`
-	CreateTime time.Time `json:"create_time"`
+	AuthItem   AuthItem    `gorm:"foreignkey:ItemName;association_foreignkey:Name" json:"auth_item"`
+	ItemName   string      `gorm:"type:varchar(64);primary_key" json:"item_name"`
+	UserId     interface{} `gorm:"primary_key;index" json:"user_id"`
+	CreateTime time.Time   `json:"create_time"`
 }
 
 func (t *AuthAssignment) TableName() string {
