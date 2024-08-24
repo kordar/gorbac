@@ -1,9 +1,47 @@
-package base
+package gorbac
+
+type AuthRepository interface {
+	AddItem(item Item) error
+	GetItem(name string) (Item, error)
+	GetItems(t int32) ([]Item, error)
+	FindAllItems() ([]Item, error)
+	AddRule(rule Rule) error
+	GetRule(name string) (*Rule, error)
+	GetRules() ([]*Rule, error)
+	RemoveItem(name string) error
+	RemoveRule(ruleName string) error
+	UpdateItem(itemName string, item Item) error
+	UpdateRule(ruleName string, rule Rule) error
+	FindRolesByUser(userId interface{}) ([]Item, error)
+	FindChildrenList() ([]*ItemChild, error)
+	FindChildrenFormChild(child string) ([]*ItemChild, error)
+	GetItemList(t int32, names []string) ([]Item, error)
+	FindPermissionsByUser(userId interface{}) ([]Item, error)
+	FindAssignmentByUser(userId interface{}) ([]*Assignment, error)
+	AddItemChild(itemChild ItemChild) error
+	RemoveChild(parent string, child string) error
+	RemoveChildren(parent string) error
+	HasChild(parent string, child string) bool
+	FindChildren(name string) ([]Item, error)
+	Assign(assignment Assignment) error
+	RemoveAssignment(userId interface{}, name string) error
+	RemoveAllAssignmentByUser(userId interface{}) error
+	RemoveAllAssignments() error
+	GetAssignment(userId interface{}, name string) (*Assignment, error)
+	GetAssignmentByItems(name string) ([]*Assignment, error)
+	GetAssignments(userId interface{}) ([]*Assignment, error)
+	GetAllAssignment() ([]*Assignment, error)
+	RemoveAll() error
+	RemoveChildByNames(key string, names []string) error
+	RemoveAssignmentByName(names []string) error
+	RemoveItemByType(t int32) error
+	RemoveAllRules() error
+}
 
 // AuthManager /**
 type AuthManager interface {
 
-	// CreatePermission /**
+	// CreatePermission
 	/**
 	 * Creates a new Role object.
 	 * Note that the newly created role is not added to the RBAC system yet.
@@ -14,7 +52,7 @@ type AuthManager interface {
 	 */
 	CreatePermission(name string) *Permission
 
-	// Add /**
+	// Add
 	/**
 	 * Adds a role, permission or rule to the RBAC system.
 	 *
@@ -24,7 +62,7 @@ type AuthManager interface {
 	Add(item Item) bool
 	AddRule(rule Rule) bool
 
-	// Remove /**
+	// Remove
 	/**
 	 * Removes a role, permission or rule from the RBAC system.
 	 *
@@ -34,7 +72,7 @@ type AuthManager interface {
 	Remove(item Item) bool
 	RemoveRule(rule Rule) bool
 
-	// Update /*
+	// Update
 	/**
 	 * Updates the specified role, permission or rule in the system.
 	 *
@@ -249,7 +287,7 @@ type AuthManager interface {
 	 * Returns all user IDs assigned to the role specified.
 	 *
 	 * @param roleName string $
-	 * @return array array of user ID strings
+	 * @return array of user ID strings
 	 * @since 2.0.7
 	 */
 	GetUserIdsByRole(roleName string) []interface{}
@@ -295,6 +333,7 @@ type AuthManager interface {
 }
 
 type ManagerInterface interface {
+
 	/**
 	 * Returns the named auth item.
 	 *
@@ -302,6 +341,7 @@ type ManagerInterface interface {
 	 * @return Item the auth item corresponding to the specified name. Null is returned if no such item.
 	 */
 	getItem(name string) Item
+
 	/**
 	 * Returns the items of the specified type.
 	 *
@@ -309,6 +349,7 @@ type ManagerInterface interface {
 	 * @return Item[] the auth items of the specified type.
 	 */
 	getItems(t ItemType) []Item
+
 	/**
 	 * Adds an auth item to the RBAC system.
 	 *
@@ -316,6 +357,7 @@ type ManagerInterface interface {
 	 * @return bool whether the auth item is successfully added to the system.
 	 */
 	addItem(item Item) bool
+
 	/**
 	 * Remove an auth item from the RBAC system.
 	 *
@@ -323,6 +365,7 @@ type ManagerInterface interface {
 	 * @return bool whether the role or permission is successfully removed.
 	 */
 	removeItem(item Item) bool
+
 	/**
 	 * Updates an auth item in the RBAC system
 	 *

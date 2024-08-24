@@ -1,4 +1,4 @@
-package db
+package gorbac
 
 var tableNames = map[string]string{
 	"rule":       "auth_rule",

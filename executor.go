@@ -1,4 +1,4 @@
-package base
+package gorbac
 
 import (
 	log "github.com/kordar/gologger"
@@ -7,6 +7,23 @@ import (
 type Executor interface {
 	Name() string
 	Execute(userId interface{}, item Item, params map[string]interface{}) bool
+}
+
+// ExecuteManager /******************execute manger*****************************/
+var ExecuteManager = container{
+	content: make(map[string]Executor),
+}
+
+type container struct {
+	content map[string]Executor
+}
+
+func (container *container) AddExecutor(executor Executor) {
+	container.content[executor.Name()] = executor
+}
+
+func (container *container) GetExecutor(name string) Executor {
+	return container.content[name]
 }
 
 type DemoExecutor struct {
