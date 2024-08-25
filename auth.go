@@ -3,7 +3,8 @@ package gorbac
 type AuthRepository interface {
 	AddItem(item Item) error
 	GetItem(name string) (Item, error)
-	GetItems(t int32) ([]Item, error)
+	GetItemsByType(itemType ItemType) ([]Item, error)
+	RemoveItemByType(itemType ItemType) error
 	FindAllItems() ([]Item, error)
 	AddRule(rule Rule) error
 	GetRule(name string) (*Rule, error)
@@ -17,7 +18,7 @@ type AuthRepository interface {
 	FindChildrenFormChild(child string) ([]*ItemChild, error)
 	GetItemList(t int32, names []string) ([]Item, error)
 	FindPermissionsByUser(userId interface{}) ([]Item, error)
-	FindAssignmentByUser(userId interface{}) ([]*Assignment, error)
+	FindAssignmentsByUser(userId interface{}) ([]*Assignment, error)
 	AddItemChild(itemChild ItemChild) error
 	RemoveChild(parent string, child string) error
 	RemoveChildren(parent string) error
@@ -28,13 +29,13 @@ type AuthRepository interface {
 	RemoveAllAssignmentByUser(userId interface{}) error
 	RemoveAllAssignments() error
 	GetAssignment(userId interface{}, name string) (*Assignment, error)
-	GetAssignmentByItems(name string) ([]*Assignment, error)
+	GetAssignmentsByItem(name string) ([]*Assignment, error)
 	GetAssignments(userId interface{}) ([]*Assignment, error)
 	GetAllAssignment() ([]*Assignment, error)
 	RemoveAll() error
-	RemoveChildByNames(key string, names []string) error
-	RemoveAssignmentByName(names []string) error
-	RemoveItemByType(t int32) error
+	RemoveChildByNames(t ItemType, names []string) error
+	RemoveAssignmentByNames(names []string) error
+
 	RemoveAllRules() error
 }
 
@@ -82,6 +83,8 @@ type AuthManager interface {
 	 */
 	Update(name string, item Item) bool
 	UpdateRule(name string, rule Rule) bool
+
+	GetItem(name string) Item
 
 	// GetRole
 	//	 * Returns the named role.
@@ -332,46 +335,46 @@ type AuthManager interface {
 	RemoveAllAssignmentByUser(userId interface{}) error
 }
 
-type ManagerInterface interface {
-
-	/**
-	 * Returns the named auth item.
-	 *
-	 * @param name String the auth item name.
-	 * @return Item the auth item corresponding to the specified name. Null is returned if no such item.
-	 */
-	getItem(name string) Item
-
-	/**
-	 * Returns the items of the specified type.
-	 *
-	 * @param type int the auth item type (either [[Item::TYPE_ROLE]] or [[Item::TYPE_PERMISSION]]
-	 * @return Item[] the auth items of the specified type.
-	 */
-	getItems(t ItemType) []Item
-
-	/**
-	 * Adds an auth item to the RBAC system.
-	 *
-	 * @param item the item to add
-	 * @return bool whether the auth item is successfully added to the system.
-	 */
-	addItem(item Item) bool
-
-	/**
-	 * Remove an auth item from the RBAC system.
-	 *
-	 * @param item the item to remove
-	 * @return bool whether the role or permission is successfully removed.
-	 */
-	removeItem(item Item) bool
-
-	/**
-	 * Updates an auth item in the RBAC system
-	 *
-	 * @param name String name the name of the item being updated
-	 * @param item the updated item
-	 * @return bool whether the auth item is successfully updated.
-	 */
-	updateItem(name string, item Item) bool
-}
+//type ManagerInterface interface {
+//
+//	/**
+//	 * Returns the named auth item.
+//	 *
+//	 * @param name String the auth item name.
+//	 * @return Item the auth item corresponding to the specified name. Null is returned if no such item.
+//	 */
+//	getItem(name string) Item
+//
+//	/**
+//	 * Returns the items of the specified type.
+//	 *
+//	 * @param type int the auth item type (either [[Item::TYPE_ROLE]] or [[Item::TYPE_PERMISSION]]
+//	 * @return Item[] the auth items of the specified type.
+//	 */
+//	getItems(t ItemType) []Item
+//
+//	/**
+//	 * Adds an auth item to the RBAC system.
+//	 *
+//	 * @param item the item to add
+//	 * @return bool whether the auth item is successfully added to the system.
+//	 */
+//	addItem(item Item) bool
+//
+//	/**
+//	 * Remove an auth item from the RBAC system.
+//	 *
+//	 * @param item the item to remove
+//	 * @return bool whether the role or permission is successfully removed.
+//	 */
+//	removeItem(item Item) bool
+//
+//	/**
+//	 * Updates an auth item in the RBAC system
+//	 *
+//	 * @param name String name the name of the item being updated
+//	 * @param item the updated item
+//	 * @return bool whether the auth item is successfully updated.
+//	 */
+//	updateItem(name string, item Item) bool
+//}

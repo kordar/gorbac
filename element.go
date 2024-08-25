@@ -3,6 +3,7 @@ package gorbac
 import "time"
 
 const (
+	NoneType       ItemType = 0
 	PermissionType ItemType = 2 // 权限
 	RoleType       ItemType = 1 // 角色
 )

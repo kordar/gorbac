@@ -9,138 +9,95 @@ import (
 
 type DefaultManager struct {
 	mapper AuthRepository
-	cache  bool
-	// all auth items (name => Item)
-	items map[string]Item
-	// all auth rules (name => Rule)
-	rules map[string]*Rule
+	cache  *DefaultCache
 	// a list of role names that are assigned to every user automatically without calling [[assign()]].
 	// Note that these roles are applied to users, regardless of their state of authentication.
-	defaultRoles map[string]*Role
-	// auth item parent-child relationships (childName => list of parents)
-	parents map[string][]string
-
+	defaultRoles            map[string]*Role
 	_checkAccessAssignments map[interface{}]map[string]*Assignment
 }
 
 func NewDefaultManager(mapper AuthRepository, cache bool) *DefaultManager {
 	return &DefaultManager{
 		mapper:                  mapper,
-		cache:                   cache,
+		cache:                   NewDefaultCache(cache),
 		_checkAccessAssignments: make(map[interface{}]map[string]*Assignment),
 		defaultRoles:            make(map[string]*Role),
 	}
 }
 
-func (manager *DefaultManager) invalidateCache() {
-	if manager.cache {
-		manager.items = make(map[string]Item)
-		manager.rules = make(map[string]*Rule)
-		manager.parents = make(map[string][]string)
-	}
+func (manager *DefaultManager) GetItem(name string) Item {
+	return manager.cache.GetItem(name, func(n string) Item {
+		if item, err := manager.mapper.GetItem(name); err == nil {
+			return item
+		} else {
+			return nil
+		}
+	})
 }
 
-func (manager *DefaultManager) refreshInvalidateCache(operator bool) bool {
-	if operator {
-		manager.invalidateCache()
-		return true
-	}
-	return false
-}
-
-func (manager *DefaultManager) getItem(name string) Item {
-	if name == "" {
-		return nil
-	}
-
-	target := manager.items[name]
-	if target != nil {
-		return target
-	}
-
-	item, err := manager.mapper.GetItem(name)
+func (manager *DefaultManager) getItems(itemType ItemType) []Item {
+	items, err := manager.mapper.GetItemsByType(itemType)
 	if err != nil {
-		return nil
-	}
-	return item
-}
-
-func (manager *DefaultManager) getItems(t ItemType) []Item {
-	data, err := manager.mapper.GetItems(t.Value())
-	if err != nil {
-		return nil
-	}
-
-	var items []Item
-	for _, item := range data {
-		items = append(items, item)
+		logger.Warnf("Error getting items: %s", err.Error())
+		return make([]Item, 0)
 	}
 	return items
 }
 
 func (manager *DefaultManager) GetRule(name string) *Rule {
-	if manager.rules != nil {
-		return manager.rules[name]
-	}
-
-	rule, err := manager.mapper.GetRule(name)
-	if err != nil {
-		return nil
-	}
-	return rule
+	return manager.cache.GetRule(name, func(n string) *Rule {
+		if rule, err := manager.mapper.GetRule(name); err == nil {
+			return rule
+		} else {
+			return nil
+		}
+	})
 }
 
 func (manager *DefaultManager) GetRules() []*Rule {
-	length := len(manager.rules)
-	if manager.rules != nil && length > 0 {
-		rules := make([]*Rule, length)
-		for _, rule := range manager.rules {
+	return manager.cache.GetRules(func() []*Rule {
+		data, err := manager.mapper.GetRules()
+		if err != nil {
+			return nil
+		}
+		var rules []*Rule
+		for _, rule := range data {
 			rules = append(rules, rule)
 		}
 		return rules
-	}
-
-	data, err := manager.mapper.GetRules()
-	if err != nil {
-		return nil
-	}
-	var rules []*Rule
-	for _, rule := range data {
-		rules = append(rules, rule)
-	}
-	return rules
+	})
 }
 
 func (manager *DefaultManager) addItem(item Item) bool {
 	err := manager.mapper.AddItem(item)
-	return manager.refreshInvalidateCache(err == nil)
+	return manager.cache.refreshInvalidateCache(err == nil)
 }
 
 func (manager *DefaultManager) AddRule(rule Rule) bool {
 	err := manager.mapper.AddRule(rule)
-	return manager.refreshInvalidateCache(err == nil)
+	return manager.cache.refreshInvalidateCache(err == nil)
 }
 
 func (manager *DefaultManager) removeItem(item Item) bool {
 	_ = manager.mapper.RemoveItem(item.GetName())
-	manager.invalidateCache()
+	manager.cache.invalidateCache()
 	return true
 }
 
 func (manager *DefaultManager) RemoveRule(rule Rule) bool {
 	_ = manager.mapper.RemoveRule(rule.Name)
-	manager.invalidateCache()
+	manager.cache.invalidateCache()
 	return true
 }
 
 func (manager *DefaultManager) updateItem(name string, item Item) bool {
 	err := manager.mapper.UpdateItem(name, item)
-	return manager.refreshInvalidateCache(err == nil)
+	return manager.cache.refreshInvalidateCache(err == nil)
 }
 
 func (manager *DefaultManager) UpdateRule(name string, rule Rule) bool {
 	err := manager.mapper.UpdateRule(name, rule)
-	return manager.refreshInvalidateCache(err == nil)
+	return manager.cache.refreshInvalidateCache(err == nil)
 }
 
 // GetRolesByUser 获取用户角色列表
@@ -167,7 +124,7 @@ func (manager *DefaultManager) GetChildRoles(roleName string) []*Role {
 
 	result := make(map[string]bool)
 	manager.getChildrenRecursive(roleName, manager.getChildrenList(), result)
-	roles := make([]*Role, 1)
+	roles := make([]*Role, 0)
 	roles = append(roles, role)
 
 	for _, r := range manager.GetRoles() {
@@ -253,7 +210,7 @@ func (manager *DefaultManager) getDirectPermissionsByUser(userId interface{}) []
 
 func (manager *DefaultManager) getInheritedPermissionsByUser(userId interface{}) []*Permission {
 	permissions := make([]*Permission, 0)
-	if authAssignments, err := manager.mapper.FindAssignmentByUser(userId); err == nil {
+	if authAssignments, err := manager.mapper.FindAssignmentsByUser(userId); err == nil {
 		childrenList := manager.getChildrenList()
 		result := make(map[string]bool)
 		for _, authAssignment := range authAssignments {
@@ -341,16 +298,11 @@ func (manager *DefaultManager) HasChild(parent Item, child Item) bool {
 }
 
 func (manager *DefaultManager) GetChildren(name string) []Item {
-	data, err := manager.mapper.FindChildren(name)
-	if err != nil {
-		return nil
+	if data, err := manager.mapper.FindChildren(name); err == nil {
+		return data
+	} else {
+		return make([]Item, 0)
 	}
-
-	var items []Item
-	for _, item := range data {
-		items = append(items, item)
-	}
-	return items
 }
 
 func (manager *DefaultManager) Assign(item Item, userId interface{}) *Assignment {
@@ -398,7 +350,7 @@ func (manager *DefaultManager) GetAssignments(userId interface{}) map[string]*As
 
 func (manager *DefaultManager) GetUserIdsByRole(roleName string) []interface{} {
 	users := make([]interface{}, 0)
-	authAssignments, err := manager.mapper.GetAssignmentByItems(roleName)
+	authAssignments, err := manager.mapper.GetAssignmentsByItem(roleName)
 	if err != nil {
 		logger.Warnf("[rbac] GetUserIdsByRole err = %v", err)
 		return users
@@ -413,7 +365,7 @@ func (manager *DefaultManager) GetUserIdsByRole(roleName string) []interface{} {
 
 func (manager *DefaultManager) RemoveAll() {
 	_ = manager.mapper.RemoveAll()
-	manager.invalidateCache()
+	manager.cache.invalidateCache()
 }
 
 func (manager *DefaultManager) RemoveAllPermissions() {
@@ -424,13 +376,8 @@ func (manager *DefaultManager) RemoveAllRoles() {
 	manager.removeAllItems(RoleType)
 }
 
-func (manager *DefaultManager) removeAllItems(t ItemType) {
-	items, err := manager.mapper.GetItems(t.Value())
-	if err != nil {
-		logger.Warnf("[rbac] RemoveAllItems err = %v", err)
-		return
-	}
-
+func (manager *DefaultManager) removeAllItems(itemType ItemType) {
+	items := manager.getItems(itemType)
 	if len(items) == 0 {
 		return
 	}
@@ -440,20 +387,15 @@ func (manager *DefaultManager) removeAllItems(t ItemType) {
 		names = append(names, item.GetName())
 	}
 
-	key := "parent"
-	if t == PermissionType {
-		key = "child"
-	}
-
-	_ = manager.mapper.RemoveChildByNames(key, names)
-	_ = manager.mapper.RemoveAssignmentByName(names)
-	_ = manager.mapper.RemoveItemByType(t.Value())
-	manager.invalidateCache()
+	_ = manager.mapper.RemoveChildByNames(itemType, names)
+	_ = manager.mapper.RemoveAssignmentByNames(names)
+	_ = manager.mapper.RemoveItemByType(itemType)
+	manager.cache.invalidateCache()
 }
 
 func (manager *DefaultManager) RemoveAllRules() {
 	_ = manager.mapper.RemoveAllRules()
-	manager.invalidateCache()
+	manager.cache.invalidateCache()
 }
 
 func (manager *DefaultManager) RemoveAllAssignments() {
@@ -476,7 +418,7 @@ func (manager *DefaultManager) CheckAccess(userId interface{}, permissionName st
 
 	manager.loadFromCache()
 
-	if manager.items != nil {
+	if manager.cache.items != nil {
 		return manager.checkAccessFromCache(userId, permissionName, params, assignments)
 	} else {
 		return manager.checkAccessRecursive(userId, permissionName, params, assignments)
@@ -484,17 +426,17 @@ func (manager *DefaultManager) CheckAccess(userId interface{}, permissionName st
 }
 
 func (manager *DefaultManager) loadFromCache() {
-	if manager.items == nil || !manager.cache {
+	if manager.cache.items == nil || !manager.cache.cache {
 		logger.Info("[rbac] load from cache fail!!")
 		return
 	}
 
-	manager.invalidateCache()
+	manager.cache.invalidateCache()
 
 	rules, err2 := manager.mapper.GetRules()
 	if err2 == nil {
 		for _, rule := range rules {
-			manager.rules[rule.Name] = NewRule(rule.Name, rule.ExecuteName, rule.CreateTime, rule.UpdateTime)
+			manager.cache.rules[rule.Name] = NewRule(rule.Name, rule.ExecuteName, rule.CreateTime, rule.UpdateTime)
 		}
 	}
 
@@ -505,7 +447,7 @@ func (manager *DefaultManager) loadFromCache() {
 	}
 
 	for _, item := range authItems {
-		manager.items[item.GetName()] = item
+		manager.cache.items[item.GetName()] = item
 	}
 
 	authItemChildren, err := manager.mapper.FindChildrenList()
@@ -516,21 +458,21 @@ func (manager *DefaultManager) loadFromCache() {
 
 	for _, authItemChild := range authItemChildren {
 		child := authItemChild.Child
-		if manager.items[child] != nil {
-			if manager.parents[child] == nil {
-				manager.parents[child] = make([]string, 1)
+		if manager.cache.items[child] != nil {
+			if manager.cache.parents[child] == nil {
+				manager.cache.parents[child] = make([]string, 0)
 			}
-			manager.parents[child] = append(manager.parents[child], authItemChild.Parent)
+			manager.cache.parents[child] = append(manager.cache.parents[child], authItemChild.Parent)
 		}
 	}
 }
 
 func (manager *DefaultManager) checkAccessFromCache(userId interface{}, itemName string, params map[string]interface{}, assignments map[string]*Assignment) bool {
-	if manager.items[itemName] == nil {
+	if manager.cache.items[itemName] == nil {
 		return false
 	}
 
-	item := manager.items[itemName]
+	item := manager.cache.items[itemName]
 	// logger.debug(item instanceof Role ? "Checking role: " + itemName : "Checking permission: " + itemName);
 	if manager.executeRule(userId, item, params) == false {
 		return false
@@ -540,7 +482,7 @@ func (manager *DefaultManager) checkAccessFromCache(userId interface{}, itemName
 		return true
 	}
 
-	parents := manager.parents[itemName]
+	parents := manager.cache.parents[itemName]
 	if parents != nil {
 		for _, parent := range parents {
 			if manager.checkAccessFromCache(userId, parent, params, assignments) {
@@ -553,11 +495,11 @@ func (manager *DefaultManager) checkAccessFromCache(userId interface{}, itemName
 }
 
 func (manager *DefaultManager) checkAccessRecursive(userId interface{}, itemName string, params map[string]interface{}, assignments map[string]*Assignment) bool {
-	if manager.items[itemName] == nil {
+	if manager.cache.items[itemName] == nil {
 		return false
 	}
 
-	item := manager.items[itemName]
+	item := manager.cache.items[itemName]
 	// logger.debug(item instanceof Role ? "Checking role: " + itemName : "Checking permission: " + itemName);
 	if !manager.executeRule(userId, item, params) {
 		return false
@@ -598,7 +540,7 @@ func (manager *DefaultManager) Remove(item Item) bool {
 
 func (manager *DefaultManager) RemoveAllAssignmentByUser(userId interface{}) error {
 	err := manager.mapper.RemoveAllAssignmentByUser(userId)
-	manager.invalidateCache()
+	manager.cache.invalidateCache()
 	return err
 }
 
@@ -609,11 +551,16 @@ func (manager *DefaultManager) Update(name string, item Item) bool {
 }
 
 func (manager *DefaultManager) GetRole(name string) *Role {
-	item := manager.getItem(name)
+	item := manager.GetItem(name)
 	if item == nil {
 		return nil
 	}
-	return NewRole(item.GetName(), item.GetDescription(), item.GetRuleName(), item.GetExecuteName(), item.GetCreateTime(), item.GetUpdateTime())
+	if item.GetType() != RoleType {
+		return nil
+	} else {
+		role := ToRole(item)
+		return &role
+	}
 }
 
 func (manager *DefaultManager) GetRoles() []*Role {
@@ -627,11 +574,16 @@ func (manager *DefaultManager) GetRoles() []*Role {
 }
 
 func (manager *DefaultManager) GetPermission(name string) *Permission {
-	item := manager.getItem(name)
+	item := manager.GetItem(name)
 	if item == nil {
 		return nil
 	}
-	return NewPermission(item.GetName(), item.GetDescription(), item.GetRuleName(), item.GetExecuteName(), item.GetCreateTime(), item.GetUpdateTime())
+	if item.GetType() != PermissionType {
+		return nil
+	} else {
+		permission := ToPermission(item)
+		return &permission
+	}
 }
 
 func (manager *DefaultManager) GetPermissions() []*Permission {
