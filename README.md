@@ -1,50 +1,74 @@
+# gorbac
+
+`RBAC`（`Role-Based Access Control`）权限模型，即：基于角色的权限控制。通过角色关联用户，角色关联权限的方式间接赋予用户权限。
+
+## 接口定义
+
+### 权限数据层接口
+（基于`mysql`、`sqlite`、`redis`等作为权限数据层），可通过实现该接口自定义数据层存储逻辑。**相关实现类：**
+
+- [`gorbac-gorm`](https://github.com/kordar/gorbac-gorm)基于[`gorm`](https://github.com/go-gorm/gorm)实现权限数据层
+- [`gorbac-redis`](https://github.com/kordar/gorbac-redis)基于[`go-redis`](https://github.com/redis/go-redis)实现权限数据层
+
 ```go
-package gorbac
+type AuthRepository interface {}
+```
 
-import (
-    "github.com/kordar/godbutil"
-    "github.com/kordar/goutil"
-    "log"
-)
+### 权限接口
 
-func init() {
-    goutil.ConfigInit("conf/dev.ini") // 初始化配置
-    godbutil.GetSqlitePool().InitDataPool("sys")
-}
+该接口定义了`rbac`模型的所有功能方法，同时`DefaultManager`实现了该接口
 
-func main() {
-    ExecuteManager.AddExecutor(&DemoExecutor{})
-    db := godbutil.GetSqlitePool().Handler("sys")
-    /*_ = db.AutoMigrate(&models.AuthRule{})
-    _ = db.AutoMigrate(&models.AuthItem{})
-    _ = db.AutoMigrate(&models.AuthItemChild{})
-    _ = db.AutoMigrate(&models.AuthAssignment{})*/
-    mapper := NewSqlRbac(db)
-    dbManager := NewDbManager(mapper, true)
-    //role := executor.NewRole("aa", "", "", "", time.Now())
-    //add := dbManager.Add(role)
-    //log.Println(add)
-    //roles := dbManager.GetRoles()
-    //fmt.Println(fmt.Printf("roles = %v", roles))
-    //permissions := dbManager.GetPermissions()
-    //log.Println(permissions)
-    //role := dbManager.GetRole("role1")
-    permission := dbManager.GetPermission("permission1")
-    //rule := executor.NewRule("rule2", "demo", time.Now())
-    //addRule := dbManager.AddRule(rule)
-    //log.Println("add rule", addRule)
-    // permission.RuleName = rule.Name
-    //dbManager.Update("permission1", permission)
+```go
+type AuthManager interface {} 
+```
 
-	//rule.Name = "demo"
-	//dbManager.UpdateRule("rule2", rule)
-	/*
-		err := dbManager.AddChild(role, permission)*/
-	//assign := dbManager.Assign(role, 1001)
-	//child := dbManager.HasChild(role, permission)
+- 使用方式
 
-	access := dbManager.CheckAccess(1001, permission.GetName(), map[string]interface{}{"aa": "cc"})
+```go
+DefaultManager(AuthRepository, Cache)
+```
 
-	log.Println(access)
+
+### 权限校验接口
+
+```go
+type Access interface {
+    CheckAccess(userId interface{}, permissionName string, params map[string]interface{}) bool
 }
 ```
+
+## 基于`rule`自定义实现权限控制
+
+`rbac`权限模型默认仅控制到权限节点，一般权限节点关联访问资源`URI`，如果想进行例如具体数据记录的权限控制，需要自定义`rule`实现类进行访问控制。开发使用如下：
+
+```go
+// 1、实现Execute接口
+type Executor interface {
+    Name() string
+    Execute(userId interface{}, item Item, params map[string]interface{}) bool
+}
+
+// 2、添加实现类
+AddExecutor(executor Executor)
+```
+
+注：`RuleName`关联在`Item`属性下。
+
+## `RbacService`使用
+
+对常用权限功能进行包装，满足日常绝大多数使用场景，开箱即用。
+
+```go
+func NewRbacService(mgr AuthRepository, cache bool) *RbacService {
+    return &RbacService{mgr: NewDefaultManager(mgr, cache)}
+}
+```
+
+
+
+
+
+
+
+
+

@@ -7,11 +7,15 @@ import (
 )
 
 type RbacService struct {
-	mgr *DefaultManager
+	mgr AuthManager
 }
 
 func NewRbacService(mgr AuthRepository, cache bool) *RbacService {
 	return &RbacService{mgr: NewDefaultManager(mgr, cache)}
+}
+
+func (s RbacService) GetAuthManager() AuthManager {
+	return s.mgr
 }
 
 // ---------------------- Roles ---------------------------

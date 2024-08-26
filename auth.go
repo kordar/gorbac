@@ -41,6 +41,7 @@ type AuthRepository interface {
 
 // AuthManager /**
 type AuthManager interface {
+	Access
 
 	// CreatePermission
 	/**
