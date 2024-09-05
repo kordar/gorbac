@@ -43,6 +43,8 @@ type AuthRepository interface {
 type AuthManager interface {
 	Access
 
+	CreateRole(name string) *Role
+
 	// CreatePermission
 	/**
 	 * Creates a new Role object.
@@ -334,6 +336,8 @@ type AuthManager interface {
 	 * Remove all role assignments by user
 	 */
 	RemoveAllAssignmentByUser(userId interface{}) error
+
+	SetDefaultRoles(roles ...*Role)
 }
 
 //type ManagerInterface interface {

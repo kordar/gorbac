@@ -1,15 +1,16 @@
 package gorbac
 
 import (
+	"context"
 	log "github.com/kordar/gologger"
 )
 
 type Executor interface {
 	Name() string
-	Execute(userId interface{}, item Item, params map[string]interface{}) bool
+	Execute(ctx context.Context, userId interface{}, item Item) bool
 }
 
-// ExecuteManager /******************execute manger*****************************/
+// ExecuteManager /****************** execute manger *****************************/
 var ExecuteManager = container{
 	content: make(map[string]Executor),
 }
@@ -33,7 +34,7 @@ func (d *DemoExecutor) Name() string {
 	return "demo"
 }
 
-func (d *DemoExecutor) Execute(userId interface{}, item Item, params map[string]interface{}) bool {
+func (d *DemoExecutor) Execute(ctx context.Context, userId interface{}, item Item) bool {
 	log.Info("============================================")
 	log.Info("==============DEMO===============")
 	log.Info("============================================")

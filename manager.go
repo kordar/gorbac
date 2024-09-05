@@ -1,6 +1,7 @@
 package gorbac
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/kordar/gologger"
@@ -403,7 +404,7 @@ func (manager *DefaultManager) RemoveAllAssignments() {
 	_ = manager.mapper.RemoveAllAssignments()
 }
 
-func (manager *DefaultManager) CheckAccess(userId interface{}, permissionName string, params map[string]interface{}) bool {
+func (manager *DefaultManager) CheckAccess(ctx context.Context, userId interface{}, permissionName string) bool {
 	var assignments map[string]*Assignment
 	if manager._checkAccessAssignments[userId] != nil {
 		assignments = manager._checkAccessAssignments[userId]
@@ -419,9 +420,9 @@ func (manager *DefaultManager) CheckAccess(userId interface{}, permissionName st
 	manager.loadFromCache()
 
 	if manager.cache.items != nil {
-		return manager.checkAccessFromCache(userId, permissionName, params, assignments)
+		return manager.checkAccessFromCache(ctx, userId, permissionName, assignments)
 	} else {
-		return manager.checkAccessRecursive(userId, permissionName, params, assignments)
+		return manager.checkAccessRecursive(ctx, userId, permissionName, assignments)
 	}
 }
 
@@ -467,14 +468,14 @@ func (manager *DefaultManager) loadFromCache() {
 	}
 }
 
-func (manager *DefaultManager) checkAccessFromCache(userId interface{}, itemName string, params map[string]interface{}, assignments map[string]*Assignment) bool {
+func (manager *DefaultManager) checkAccessFromCache(ctx context.Context, userId interface{}, itemName string, assignments map[string]*Assignment) bool {
 	if manager.cache.items[itemName] == nil {
 		return false
 	}
 
 	item := manager.cache.items[itemName]
 	// logger.debug(item instanceof Role ? "Checking role: " + itemName : "Checking permission: " + itemName);
-	if manager.executeRule(userId, item, params) == false {
+	if manager.executeRule(ctx, userId, item) == false {
 		return false
 	}
 
@@ -485,7 +486,7 @@ func (manager *DefaultManager) checkAccessFromCache(userId interface{}, itemName
 	parents := manager.cache.parents[itemName]
 	if parents != nil {
 		for _, parent := range parents {
-			if manager.checkAccessFromCache(userId, parent, params, assignments) {
+			if manager.checkAccessFromCache(ctx, userId, parent, assignments) {
 				return true
 			}
 		}
@@ -494,14 +495,14 @@ func (manager *DefaultManager) checkAccessFromCache(userId interface{}, itemName
 	return false
 }
 
-func (manager *DefaultManager) checkAccessRecursive(userId interface{}, itemName string, params map[string]interface{}, assignments map[string]*Assignment) bool {
+func (manager *DefaultManager) checkAccessRecursive(ctx context.Context, userId interface{}, itemName string, assignments map[string]*Assignment) bool {
 	if manager.cache.items[itemName] == nil {
 		return false
 	}
 
 	item := manager.cache.items[itemName]
 	// logger.debug(item instanceof Role ? "Checking role: " + itemName : "Checking permission: " + itemName);
-	if !manager.executeRule(userId, item, params) {
+	if !manager.executeRule(ctx, userId, item) {
 		return false
 	}
 
@@ -511,7 +512,7 @@ func (manager *DefaultManager) checkAccessRecursive(userId interface{}, itemName
 
 	if authChildren, err := manager.mapper.FindChildrenFormChild(itemName); err == nil {
 		for _, authChild := range authChildren {
-			if manager.checkAccessRecursive(userId, authChild.Parent, params, assignments) {
+			if manager.checkAccessRecursive(ctx, userId, authChild.Parent, assignments) {
 				return true
 			}
 		}
@@ -613,7 +614,7 @@ func (manager *DefaultManager) getDefaultRoles() map[string]*Role {
 	return manager.defaultRoles
 }
 
-func (manager *DefaultManager) executeRule(userId interface{}, item Item, params map[string]interface{}) bool {
+func (manager *DefaultManager) executeRule(ctx context.Context, userId interface{}, item Item) bool {
 	if item.GetRuleName() == "" {
 		return true
 	}
@@ -624,7 +625,7 @@ func (manager *DefaultManager) executeRule(userId interface{}, item Item, params
 		return false
 	}
 
-	return rule.GetExecutor().Execute(userId, item, params)
+	return rule.GetExecutor().Execute(ctx, userId, item)
 }
 
 func (manager *DefaultManager) hasNoAssignments(assignments map[string]*Assignment) bool {
