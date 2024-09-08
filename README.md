@@ -33,7 +33,7 @@ DefaultManager(AuthRepository, Cache)
 
 ```go
 type Access interface {
-    CheckAccess(userId interface{}, permissionName string, params map[string]interface{}) bool
+    CheckAccess(ctx context.Context, userId interface{}, permission string) bool
 }
 ```
 
@@ -45,7 +45,7 @@ type Access interface {
 // 1、实现Execute接口
 type Executor interface {
     Name() string
-    Execute(userId interface{}, item Item, params map[string]interface{}) bool
+    Execute(ctx context.Context, userId interface{}, item Item) bool
 }
 
 // 2、添加实现类

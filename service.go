@@ -10,8 +10,13 @@ type RbacService struct {
 	mgr AuthManager
 }
 
-func NewRbacService(mgr AuthRepository, cache bool) *RbacService {
-	return &RbacService{mgr: NewDefaultManager(mgr, cache)}
+func NewRbacService(repos AuthRepository, cache bool) *RbacService {
+	manager := NewDefaultManager(repos, cache)
+	return NewRbacServiceWithManager(manager)
+}
+
+func NewRbacServiceWithManager(mgr AuthManager) *RbacService {
+	return &RbacService{mgr: mgr}
 }
 
 func (s RbacService) GetAuthManager() AuthManager {
