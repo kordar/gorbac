@@ -18,9 +18,11 @@ type DefaultManager struct {
 }
 
 func NewDefaultManager(mapper AuthRepository, cache bool) *DefaultManager {
+	defaultCache := NewDefaultCache(cache)
+	defaultCache.invalidateCache()
 	return &DefaultManager{
 		mapper:                  mapper,
-		cache:                   NewDefaultCache(cache),
+		cache:                   defaultCache,
 		_checkAccessAssignments: make(map[interface{}]map[string]*Assignment),
 		defaultRoles:            make(map[string]*Role),
 	}
@@ -45,28 +47,38 @@ func (manager *DefaultManager) getItems(itemType ItemType) []Item {
 	return items
 }
 
+func (manager *DefaultManager) getRuleItem(name string) *Rule {
+	if rule, err := manager.mapper.GetRule(name); err == nil {
+		return rule
+	} else {
+		return nil
+	}
+}
+
 func (manager *DefaultManager) GetRule(name string) *Rule {
-	return manager.cache.GetRule(name, func(n string) *Rule {
-		if rule, err := manager.mapper.GetRule(name); err == nil {
-			return rule
-		} else {
-			return nil
-		}
-	})
+	if manager.cache.enable {
+		return manager.cache.GetRule(name, manager.getRuleItem)
+	}
+	return manager.getRuleItem(name)
+}
+
+func (manager *DefaultManager) getRulesAll() []*Rule {
+	data, err := manager.mapper.GetRules()
+	if err != nil {
+		return nil
+	}
+	var rules []*Rule
+	for _, rule := range data {
+		rules = append(rules, rule)
+	}
+	return rules
 }
 
 func (manager *DefaultManager) GetRules() []*Rule {
-	return manager.cache.GetRules(func() []*Rule {
-		data, err := manager.mapper.GetRules()
-		if err != nil {
-			return nil
-		}
-		var rules []*Rule
-		for _, rule := range data {
-			rules = append(rules, rule)
-		}
-		return rules
-	})
+	if manager.cache.enable {
+		return manager.cache.GetRules(manager.getRulesAll)
+	}
+	return manager.getRulesAll()
 }
 
 func (manager *DefaultManager) addItem(item Item) bool {
@@ -410,7 +422,9 @@ func (manager *DefaultManager) CheckAccess(ctx context.Context, userId interface
 		assignments = manager._checkAccessAssignments[userId]
 	} else {
 		assignments = manager.GetAssignments(userId)
-		manager._checkAccessAssignments[userId] = assignments
+		if assignments != nil && len(assignments) > 0 {
+			manager._checkAccessAssignments[userId] = assignments
+		}
 	}
 
 	if manager.hasNoAssignments(assignments) {
@@ -427,8 +441,8 @@ func (manager *DefaultManager) CheckAccess(ctx context.Context, userId interface
 }
 
 func (manager *DefaultManager) loadFromCache() {
-	if manager.cache.items == nil || !manager.cache.cache {
-		logger.Info("[rbac] load from cache fail!!")
+	if manager.cache.items == nil || !manager.cache.enable {
+		logger.Warn("[rbac] load from cache skip!")
 		return
 	}
 
@@ -474,9 +488,24 @@ func (manager *DefaultManager) checkAccessFromCache(ctx context.Context, userId 
 	}
 
 	item := manager.cache.items[itemName]
-	// logger.debug(item instanceof Role ? "Checking role: " + itemName : "Checking permission: " + itemName);
-	if manager.executeRule(ctx, userId, item) == false {
-		return false
+
+	if item.GetExecuteName() != "" {
+		executor := ExecuteManager.GetExecutor(item.GetExecuteName())
+		if executor != nil {
+			return executor.Execute(ctx, userId, item)
+		}
+	}
+
+	if item.GetRuleName() != "" {
+		rule := manager.GetRule(item.GetRuleName())
+		if rule == nil {
+			logger.Warnf("the rule named '%s' does not exist.", item.GetRuleName())
+			return false
+		}
+		executor := rule.GetExecutor()
+		if executor != nil {
+			return executor.Execute(ctx, userId, item)
+		}
 	}
 
 	if assignments[itemName] != nil || manager.defaultRoles[itemName] != nil {
@@ -496,14 +525,30 @@ func (manager *DefaultManager) checkAccessFromCache(ctx context.Context, userId 
 }
 
 func (manager *DefaultManager) checkAccessRecursive(ctx context.Context, userId interface{}, itemName string, assignments map[string]*Assignment) bool {
-	if manager.cache.items[itemName] == nil {
+
+	item, err2 := manager.mapper.GetItem(itemName)
+	if err2 != nil {
+		logger.Warnf("the item named '%s' does not exist.", itemName)
 		return false
 	}
 
-	item := manager.cache.items[itemName]
-	// logger.debug(item instanceof Role ? "Checking role: " + itemName : "Checking permission: " + itemName);
-	if !manager.executeRule(ctx, userId, item) {
-		return false
+	if item.GetExecuteName() != "" {
+		executor := ExecuteManager.GetExecutor(item.GetExecuteName())
+		if executor != nil {
+			return executor.Execute(ctx, userId, item)
+		}
+	}
+
+	if item.GetRuleName() != "" {
+		rule := manager.GetRule(item.GetRuleName())
+		if rule == nil {
+			logger.Warnf("the rule named '%s' does not exist.", item.GetRuleName())
+			return false
+		}
+		executor := rule.GetExecutor()
+		if executor != nil {
+			return executor.Execute(ctx, userId, item)
+		}
 	}
 
 	if assignments[itemName] != nil || manager.defaultRoles[itemName] != nil {
@@ -612,20 +657,6 @@ func (manager *DefaultManager) SetDefaultRoles(roles ...*Role) {
 
 func (manager *DefaultManager) getDefaultRoles() map[string]*Role {
 	return manager.defaultRoles
-}
-
-func (manager *DefaultManager) executeRule(ctx context.Context, userId interface{}, item Item) bool {
-	if item.GetRuleName() == "" {
-		return true
-	}
-
-	rule := manager.GetRule(item.GetRuleName())
-	if rule == nil {
-		logger.Warn("[rbac] Rule not found: " + item.GetRuleName())
-		return false
-	}
-
-	return rule.GetExecutor().Execute(ctx, userId, item)
 }
 
 func (manager *DefaultManager) hasNoAssignments(assignments map[string]*Assignment) bool {
