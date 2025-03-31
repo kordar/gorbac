@@ -8,7 +8,7 @@ func MergePermissions(list1 []*Permission, list2 []*Permission) []*Permission {
 	for _, permission := range list2 {
 		m[permission.Name] = permission
 	}
-	permissions := make([]*Permission, len(m))
+	permissions := make([]*Permission, 0, len(m))
 	for _, permission := range m {
 		permissions = append(permissions, permission)
 	}
