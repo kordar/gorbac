@@ -1,7 +1,6 @@
 package gorbac
 
 import (
-	"errors"
 	"fmt"
 	"time"
 )
@@ -88,13 +87,13 @@ func (s RbacService) CleanChildren(parent string) bool {
 }
 
 func (s RbacService) AssignChildren(parent string, children ...string) error {
-	if children == nil || len(children) == 0 {
+	if len(children) == 0 {
 		return nil
 	}
 
 	role := s.mgr.GetRole(parent)
 	if role == nil {
-		return errors.New(fmt.Sprintf("role %s not found", parent))
+		return fmt.Errorf("role %s not found", parent)
 	}
 
 	for _, ss := range children {
@@ -150,13 +149,11 @@ func (s RbacService) CleanAssigns(userId interface{}) {
 }
 
 func (s RbacService) Assigns(userId interface{}, names ...string) {
-	for _, name := range names {
-		item := s.mgr.GetItem(name)
-		if item == nil {
-			continue
-		}
-		s.mgr.Assign(item, userId)
-	}
+	s.mgr.Assigns(userId, names...)
+	// for _, name := range names {
+	// 	item := s.mgr.GetItem(name)
+	// 	s.mgr.Assign(item, userId)
+	// }
 }
 
 func (s RbacService) GetChildren(name string) []Item {

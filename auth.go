@@ -25,6 +25,7 @@ type AuthRepository interface {
 	HasChild(parent string, child string) bool
 	FindChildren(name string) ([]Item, error)
 	Assign(assignment Assignment) error
+	Assigns(assignment ...*Assignment) error
 	RemoveAssignment(userId interface{}, name string) error
 	RemoveAllAssignmentByUser(userId interface{}) error
 	RemoveAllAssignments() error
@@ -247,6 +248,7 @@ type AuthManager interface {
 	 * @return Assignment the role assignment information.
 	 */
 	Assign(item Item, userId interface{}) *Assignment
+	Assigns(userId interface{}, name ...string) []*Assignment
 
 	// Revoke
 	/**
@@ -337,6 +339,7 @@ type AuthManager interface {
 	 */
 	RemoveAllAssignmentByUser(userId interface{}) error
 
+	GetDefaultRoles() []*Role
 	SetDefaultRoles(roles ...*Role)
 }
 

@@ -2,10 +2,10 @@ package gorbac
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"github.com/kordar/gologger"
 	"time"
+
+	logger "github.com/kordar/gologger"
 )
 
 type DefaultManager struct {
@@ -67,10 +67,8 @@ func (manager *DefaultManager) getRulesAll() []*Rule {
 	if err != nil {
 		return nil
 	}
-	var rules []*Rule
-	for _, rule := range data {
-		rules = append(rules, rule)
-	}
+	rules := make([]*Rule, 0, len(data))
+	rules = append(rules, data...)
 	return rules
 }
 
@@ -94,12 +92,14 @@ func (manager *DefaultManager) AddRule(rule Rule) bool {
 func (manager *DefaultManager) removeItem(item Item) bool {
 	_ = manager.mapper.RemoveItem(item.GetName())
 	manager.cache.invalidateCache()
+	manager.loadFromCache()
 	return true
 }
 
 func (manager *DefaultManager) RemoveRule(rule Rule) bool {
 	_ = manager.mapper.RemoveRule(rule.Name)
 	manager.cache.invalidateCache()
+	manager.loadFromCache()
 	return true
 }
 
@@ -124,6 +124,9 @@ func (manager *DefaultManager) GetRolesByUser(userId interface{}) []*Role {
 		role := ToRole(item)
 		roles = append(roles, &role)
 	}
+	// 将default加入用户
+	defaultRoles := manager.GetDefaultRoles()
+	roles = append(roles, defaultRoles...)
 	return roles
 }
 
@@ -141,7 +144,7 @@ func (manager *DefaultManager) GetChildRoles(roleName string) []*Role {
 	roles = append(roles, role)
 
 	for _, r := range manager.GetRoles() {
-		if result[r.Name] == true {
+		if result[r.Name] {
 			roles = append(roles, r)
 		}
 	}
@@ -184,7 +187,7 @@ func (manager *DefaultManager) GetPermissionsByRole(roleName string) []*Permissi
 	permissions := make([]*Permission, 0)
 	names := make([]string, 0)
 	for name, exists := range result {
-		if exists == true {
+		if exists {
 			names = append(names, name)
 		}
 	}
@@ -206,6 +209,12 @@ func (manager *DefaultManager) GetPermissionsByRole(roleName string) []*Permissi
 func (manager *DefaultManager) GetPermissionsByUser(userId interface{}) []*Permission {
 	directPermissions := manager.getDirectPermissionsByUser(userId)
 	inheritedPermissions := manager.getInheritedPermissionsByUser(userId)
+	// 合并默认角色下的权限节点
+	defaultRoles := manager.GetDefaultRoles()
+	for _, role := range defaultRoles {
+		pp := manager.GetPermissionsByRole(role.Name)
+		directPermissions = MergePermissions(directPermissions, pp)
+	}
 	return MergePermissions(directPermissions, inheritedPermissions)
 }
 
@@ -232,7 +241,7 @@ func (manager *DefaultManager) getInheritedPermissionsByUser(userId interface{})
 
 		names := make([]string, 0)
 		for name, exists := range result {
-			if exists == true {
+			if exists {
 				names = append(names, name)
 			}
 		}
@@ -264,11 +273,9 @@ func (manager *DefaultManager) detectLoop(parent Item, child Item) bool {
 	}
 
 	children := manager.GetChildren(child.GetName())
-	if children != nil {
-		for _, child2 := range children {
-			if manager.detectLoop(parent, child2) {
-				return true
-			}
+	for _, child2 := range children {
+		if manager.detectLoop(parent, child2) {
+			return true
 		}
 	}
 
@@ -278,15 +285,15 @@ func (manager *DefaultManager) detectLoop(parent Item, child Item) bool {
 func (manager *DefaultManager) AddChild(parent Item, child Item) error {
 
 	if parent.GetName() == child.GetName() {
-		return errors.New(fmt.Sprintf("Cannot add '%s' as a child of itself.", parent.GetName()))
+		return fmt.Errorf("cannot add '%s' as a child of itself", parent.GetName())
 	}
 
 	if parent.GetType() == PermissionType && child.GetType() == RoleType {
-		return errors.New(fmt.Sprintf("Cannot add a role as a child of a permission."))
+		return fmt.Errorf("cannot add a role as a child of a permission")
 	}
 
 	if manager.detectLoop(parent, child) {
-		return errors.New(fmt.Sprintf("Cannot add '%s' as a child of '%s'. A loop has been detected.", parent.GetName(), child.GetName()))
+		return fmt.Errorf("cannot add '%s' as a child of '%s'. A loop has been detected", parent.GetName(), child.GetName())
 	}
 
 	itemChild := NewItemChild(parent.GetName(), child.GetName())
@@ -324,6 +331,34 @@ func (manager *DefaultManager) Assign(item Item, userId interface{}) *Assignment
 	if err == nil {
 		delete(manager._checkAccessAssignments, userId)
 		return assignment
+	}
+	return nil
+}
+
+func (manager *DefaultManager) UniqueStrings(names []string) []string {
+	seen := make(map[string]struct{}, len(names))
+	result := make([]string, 0, len(names))
+
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+	}
+	return result
+}
+
+func (manager *DefaultManager) Assigns(userId interface{}, name ...string) []*Assignment {
+	name = manager.UniqueStrings(name)
+	assignments := make([]*Assignment, 0, len(name))
+	for _, n := range name {
+		assignments = append(assignments, NewAssignment(userId, n))
+	}
+	err := manager.mapper.Assigns(assignments...)
+	if err == nil {
+		delete(manager._checkAccessAssignments, userId)
+		return assignments
 	}
 	return nil
 }
@@ -379,6 +414,7 @@ func (manager *DefaultManager) GetUserIdsByRole(roleName string) []interface{} {
 func (manager *DefaultManager) RemoveAll() {
 	_ = manager.mapper.RemoveAll()
 	manager.cache.invalidateCache()
+	manager.loadFromCache()
 }
 
 func (manager *DefaultManager) RemoveAllPermissions() {
@@ -404,11 +440,13 @@ func (manager *DefaultManager) removeAllItems(itemType ItemType) {
 	_ = manager.mapper.RemoveAssignmentByNames(names)
 	_ = manager.mapper.RemoveItemByType(itemType)
 	manager.cache.invalidateCache()
+	manager.loadFromCache()
 }
 
 func (manager *DefaultManager) RemoveAllRules() {
 	_ = manager.mapper.RemoveAllRules()
 	manager.cache.invalidateCache()
+	manager.loadFromCache()
 }
 
 func (manager *DefaultManager) RemoveAllAssignments() {
@@ -422,7 +460,7 @@ func (manager *DefaultManager) CheckAccess(ctx context.Context, userId interface
 		assignments = manager._checkAccessAssignments[userId]
 	} else {
 		assignments = manager.GetAssignments(userId)
-		if assignments != nil && len(assignments) > 0 {
+		if len(assignments) > 0 {
 			manager._checkAccessAssignments[userId] = assignments
 		}
 	}
@@ -441,8 +479,12 @@ func (manager *DefaultManager) CheckAccess(ctx context.Context, userId interface
 }
 
 func (manager *DefaultManager) loadFromCache() {
-	if manager.cache.items == nil || !manager.cache.enable {
+	if !manager.cache.enable {
 		logger.Warn("[rbac] load from cache skip!")
+		return
+	}
+
+	if len(manager.cache.items) > 0 {
 		return
 	}
 
@@ -513,11 +555,9 @@ func (manager *DefaultManager) checkAccessFromCache(ctx context.Context, userId 
 	}
 
 	parents := manager.cache.parents[itemName]
-	if parents != nil {
-		for _, parent := range parents {
-			if manager.checkAccessFromCache(ctx, userId, parent, assignments) {
-				return true
-			}
+	for _, parent := range parents {
+		if manager.checkAccessFromCache(ctx, userId, parent, assignments) {
+			return true
 		}
 	}
 
@@ -587,6 +627,7 @@ func (manager *DefaultManager) Remove(item Item) bool {
 func (manager *DefaultManager) RemoveAllAssignmentByUser(userId interface{}) error {
 	err := manager.mapper.RemoveAllAssignmentByUser(userId)
 	manager.cache.invalidateCache()
+	manager.loadFromCache()
 	return err
 }
 
@@ -655,8 +696,12 @@ func (manager *DefaultManager) SetDefaultRoles(roles ...*Role) {
 	}
 }
 
-func (manager *DefaultManager) getDefaultRoles() map[string]*Role {
-	return manager.defaultRoles
+func (manager *DefaultManager) GetDefaultRoles() []*Role {
+	roles := make([]*Role, 0, len(manager.defaultRoles))
+	for _, role := range manager.defaultRoles {
+		roles = append(roles, role)
+	}
+	return roles
 }
 
 func (manager *DefaultManager) hasNoAssignments(assignments map[string]*Assignment) bool {
