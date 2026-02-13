@@ -90,12 +90,10 @@ func (s RbacService) AssignChildren(parent string, children ...string) error {
 	if len(children) == 0 {
 		return nil
 	}
-
 	role := s.mgr.GetRole(parent)
 	if role == nil {
 		return fmt.Errorf("role %s not found", parent)
 	}
-
 	for _, ss := range children {
 		item := s.mgr.GetItem(ss)
 		if item != nil {

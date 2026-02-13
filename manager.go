@@ -3,6 +3,7 @@ package gorbac
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	logger "github.com/kordar/gologger"
@@ -15,6 +16,7 @@ type DefaultManager struct {
 	// Note that these roles are applied to users, regardless of their state of authentication.
 	defaultRoles            map[string]*Role
 	_checkAccessAssignments map[interface{}]map[string]*Assignment
+	mu                      sync.RWMutex
 }
 
 func NewDefaultManager(mapper AuthRepository, cache bool) *DefaultManager {
@@ -81,36 +83,46 @@ func (manager *DefaultManager) GetRules() []*Rule {
 
 func (manager *DefaultManager) addItem(item Item) bool {
 	err := manager.mapper.AddItem(item)
-	return manager.cache.refreshInvalidateCache(err == nil)
+	if err == nil {
+		manager.resetAllCache()
+	}
+	return err == nil
 }
 
 func (manager *DefaultManager) AddRule(rule Rule) bool {
 	err := manager.mapper.AddRule(rule)
-	return manager.cache.refreshInvalidateCache(err == nil)
+	if err == nil {
+		manager.resetAllCache()
+	}
+	return err == nil
 }
 
 func (manager *DefaultManager) removeItem(item Item) bool {
 	_ = manager.mapper.RemoveItem(item.GetName())
-	manager.cache.invalidateCache()
-	manager.loadFromCache()
+	manager.resetAllCache()
 	return true
 }
 
 func (manager *DefaultManager) RemoveRule(rule Rule) bool {
 	_ = manager.mapper.RemoveRule(rule.Name)
-	manager.cache.invalidateCache()
-	manager.loadFromCache()
+	manager.resetAllCache()
 	return true
 }
 
 func (manager *DefaultManager) updateItem(name string, item Item) bool {
 	err := manager.mapper.UpdateItem(name, item)
-	return manager.cache.refreshInvalidateCache(err == nil)
+	if err == nil {
+		manager.resetAllCache()
+	}
+	return err == nil
 }
 
 func (manager *DefaultManager) UpdateRule(name string, rule Rule) bool {
 	err := manager.mapper.UpdateRule(name, rule)
-	return manager.cache.refreshInvalidateCache(err == nil)
+	if err == nil {
+		manager.resetAllCache()
+	}
+	return err == nil
 }
 
 // GetRolesByUser 获取用户角色列表
@@ -297,11 +309,19 @@ func (manager *DefaultManager) AddChild(parent Item, child Item) error {
 	}
 
 	itemChild := NewItemChild(parent.GetName(), child.GetName())
-	return manager.mapper.AddItemChild(*itemChild)
+	err := manager.mapper.AddItemChild(*itemChild)
+	if err == nil {
+		manager.resetAllCache()
+	}
+	return err
+
 }
 
 func (manager *DefaultManager) RemoveChild(parent Item, child Item) bool {
-	err := manager.mapper.RemoveChild(parent.GetName(), child.GetName())
+	err := manager.mapper.RemoveChildren(parent.GetName())
+	if err == nil {
+		manager.resetAllCache()
+	}
 	return err == nil
 }
 
@@ -329,7 +349,9 @@ func (manager *DefaultManager) Assign(item Item, userId interface{}) *Assignment
 	assignment := NewAssignment(userId, item.GetName())
 	err := manager.mapper.Assign(*assignment)
 	if err == nil {
+		manager.mu.Lock()
 		delete(manager._checkAccessAssignments, userId)
+		manager.mu.Unlock()
 		return assignment
 	}
 	return nil
@@ -357,20 +379,26 @@ func (manager *DefaultManager) Assigns(userId interface{}, name ...string) []*As
 	}
 	err := manager.mapper.Assigns(assignments...)
 	if err == nil {
+		manager.mu.Lock()
 		delete(manager._checkAccessAssignments, userId)
+		manager.mu.Unlock()
 		return assignments
 	}
 	return nil
 }
 
 func (manager *DefaultManager) Revoke(item Item, userId interface{}) bool {
+	manager.mu.Lock()
 	delete(manager._checkAccessAssignments, userId)
+	manager.mu.Unlock()
 	err := manager.mapper.RemoveAssignment(userId, item.GetName())
 	return err == nil
 }
 
 func (manager *DefaultManager) RevokeAll(userId interface{}) bool {
+	manager.mu.Lock()
 	delete(manager._checkAccessAssignments, userId)
+	manager.mu.Unlock()
 	err := manager.mapper.RemoveAllAssignmentByUser(userId)
 	return err == nil
 }
@@ -413,8 +441,7 @@ func (manager *DefaultManager) GetUserIdsByRole(roleName string) []interface{} {
 
 func (manager *DefaultManager) RemoveAll() {
 	_ = manager.mapper.RemoveAll()
-	manager.cache.invalidateCache()
-	manager.loadFromCache()
+	manager.resetAllCache()
 }
 
 func (manager *DefaultManager) RemoveAllPermissions() {
@@ -450,18 +477,33 @@ func (manager *DefaultManager) RemoveAllRules() {
 }
 
 func (manager *DefaultManager) RemoveAllAssignments() {
+	manager.mu.Lock()
 	manager._checkAccessAssignments = make(map[interface{}]map[string]*Assignment)
+	manager.mu.Unlock()
 	_ = manager.mapper.RemoveAllAssignments()
 }
 
-func (manager *DefaultManager) CheckAccess(ctx context.Context, userId interface{}, permissionName string) bool {
+func (manager *DefaultManager) CheckAccess(
+	ctx context.Context,
+	userId interface{},
+	permissionName string,
+) bool {
+
 	var assignments map[string]*Assignment
+
+	manager.mu.RLock()
 	if manager._checkAccessAssignments[userId] != nil {
 		assignments = manager._checkAccessAssignments[userId]
+		manager.mu.RUnlock()
 	} else {
+		manager.mu.RUnlock()
+
 		assignments = manager.GetAssignments(userId)
+
 		if len(assignments) > 0 {
+			manager.mu.Lock()
 			manager._checkAccessAssignments[userId] = assignments
+			manager.mu.Unlock()
 		}
 	}
 
@@ -471,12 +513,39 @@ func (manager *DefaultManager) CheckAccess(ctx context.Context, userId interface
 
 	manager.loadFromCache()
 
-	if manager.cache.items != nil {
+	manager.mu.RLock()
+	hasCache := len(manager.cache.items) > 0
+	manager.mu.RUnlock()
+
+	if hasCache {
 		return manager.checkAccessFromCache(ctx, userId, permissionName, assignments)
-	} else {
-		return manager.checkAccessRecursive(ctx, userId, permissionName, assignments)
 	}
+	return manager.checkAccessRecursive(ctx, userId, permissionName, assignments)
 }
+
+//func (manager *DefaultManager) CheckAccess(ctx context.Context, userId interface{}, permissionName string) bool {
+//	var assignments map[string]*Assignment
+//	if manager._checkAccessAssignments[userId] != nil {
+//		assignments = manager._checkAccessAssignments[userId]
+//	} else {
+//		assignments = manager.GetAssignments(userId)
+//		if len(assignments) > 0 {
+//			manager._checkAccessAssignments[userId] = assignments
+//		}
+//	}
+//
+//	if manager.hasNoAssignments(assignments) {
+//		return false
+//	}
+//
+//	manager.loadFromCache()
+//
+//	if manager.cache.items != nil {
+//		return manager.checkAccessFromCache(ctx, userId, permissionName, assignments)
+//	} else {
+//		return manager.checkAccessRecursive(ctx, userId, permissionName, assignments)
+//	}
+//}
 
 func (manager *DefaultManager) loadFromCache() {
 	if !manager.cache.enable {
@@ -484,9 +553,26 @@ func (manager *DefaultManager) loadFromCache() {
 		return
 	}
 
+	manager.mu.RLock()
+	if len(manager.cache.items) > 0 {
+		manager.mu.RUnlock()
+		return
+	}
+	manager.mu.RUnlock()
+
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
 	if len(manager.cache.items) > 0 {
 		return
 	}
+
+	//manager.mu.Lock()
+	//defer manager.mu.Unlock()
+	//
+	//if len(manager.cache.items) > 0 {
+	//	return
+	//}
 
 	manager.cache.invalidateCache()
 
@@ -529,7 +615,9 @@ func (manager *DefaultManager) checkAccessFromCache(ctx context.Context, userId 
 		return false
 	}
 
+	manager.mu.RLock()
 	item := manager.cache.items[itemName]
+	manager.mu.RUnlock()
 
 	if item.GetExecuteName() != "" {
 		executor := ExecuteManager.GetExecutor(item.GetExecuteName())
@@ -554,7 +642,10 @@ func (manager *DefaultManager) checkAccessFromCache(ctx context.Context, userId 
 		return true
 	}
 
+	manager.mu.RLock()
 	parents := manager.cache.parents[itemName]
+	manager.mu.RUnlock()
+
 	for _, parent := range parents {
 		if manager.checkAccessFromCache(ctx, userId, parent, assignments) {
 			return true
@@ -626,8 +717,9 @@ func (manager *DefaultManager) Remove(item Item) bool {
 
 func (manager *DefaultManager) RemoveAllAssignmentByUser(userId interface{}) error {
 	err := manager.mapper.RemoveAllAssignmentByUser(userId)
-	manager.cache.invalidateCache()
-	manager.loadFromCache()
+	if err == nil {
+		manager.resetAllCache()
+	}
 	return err
 }
 
@@ -691,12 +783,16 @@ func (manager *DefaultManager) checkRuleExits(name string) {
 }
 
 func (manager *DefaultManager) SetDefaultRoles(roles ...*Role) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
 	for _, role := range roles {
 		manager.defaultRoles[role.GetName()] = role
 	}
 }
 
 func (manager *DefaultManager) GetDefaultRoles() []*Role {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
 	roles := make([]*Role, 0, len(manager.defaultRoles))
 	for _, role := range manager.defaultRoles {
 		roles = append(roles, role)
@@ -705,5 +801,19 @@ func (manager *DefaultManager) GetDefaultRoles() []*Role {
 }
 
 func (manager *DefaultManager) hasNoAssignments(assignments map[string]*Assignment) bool {
+	//return len(assignments) == 0 && len(manager.defaultRoles) == 0
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
 	return len(assignments) == 0 && len(manager.defaultRoles) == 0
+}
+
+func (manager *DefaultManager) resetAllCache() {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	// 清用户权限判定缓存
+	manager._checkAccessAssignments = make(map[interface{}]map[string]*Assignment)
+
+	// 清 RBAC 结构缓存
+	manager.cache.invalidateCache()
 }

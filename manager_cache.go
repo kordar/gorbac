@@ -34,7 +34,7 @@ func (manager *DefaultCache) GetItem(name string, f func(n string) Item) Item {
 	if name == "" {
 		return nil
 	}
-	if manager.items != nil {
+	if len(manager.items) > 0 {
 		return manager.items[name]
 	}
 	return f(name)
