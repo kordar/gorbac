@@ -14,6 +14,18 @@ func NewRbacService(repos AuthRepository, cache bool) *RbacService {
 	return NewRbacServiceWithManager(manager)
 }
 
+func NewRbacServiceWithCacheStore(
+	repos AuthRepository,
+	cache bool,
+	store CacheStore,
+	keyPrefix string,
+	ttl time.Duration,
+) *RbacService {
+	manager := NewDefaultManager(repos, cache)
+	manager.SetCacheStore(store, keyPrefix, ttl)
+	return NewRbacServiceWithManager(manager)
+}
+
 func NewRbacServiceWithManager(mgr AuthManager) *RbacService {
 	return &RbacService{mgr: mgr}
 }

@@ -22,14 +22,6 @@ func (manager *DefaultCache) invalidateCache() {
 	}
 }
 
-func (manager *DefaultCache) refreshInvalidateCache(operator bool) bool {
-	if operator {
-		manager.invalidateCache()
-		return true
-	}
-	return false
-}
-
 func (manager *DefaultCache) GetItem(name string, f func(n string) Item) Item {
 	if name == "" {
 		return nil

@@ -2,6 +2,7 @@ package gorbac
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -9,9 +10,14 @@ import (
 	logger "github.com/kordar/gologger"
 )
 
+const cacheSnapshotVersion = 1
+
 type DefaultManager struct {
 	mapper AuthRepository
 	cache  *DefaultCache
+	cacheStore     CacheStore
+	cacheKeyPrefix string
+	cacheTTL       time.Duration
 	// a list of role names that are assigned to every user automatically without calling [[assign()]].
 	// Note that these roles are applied to users, regardless of their state of authentication.
 	defaultRoles            map[string]*Role
@@ -25,9 +31,27 @@ func NewDefaultManager(mapper AuthRepository, cache bool) *DefaultManager {
 	return &DefaultManager{
 		mapper:                  mapper,
 		cache:                   defaultCache,
+		cacheKeyPrefix:          "gorbac",
 		_checkAccessAssignments: make(map[interface{}]map[string]*Assignment),
 		defaultRoles:            make(map[string]*Role),
 	}
+}
+
+func (manager *DefaultManager) SetCacheStore(store CacheStore, keyPrefix string, ttl time.Duration) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	manager.cacheStore = store
+	if keyPrefix != "" {
+		manager.cacheKeyPrefix = keyPrefix
+	}
+	manager.cacheTTL = ttl
+}
+
+func (manager *DefaultManager) cacheSnapshotKey() string {
+	if manager.cacheKeyPrefix == "" {
+		return "gorbac:rbac:snapshot"
+	}
+	return manager.cacheKeyPrefix + ":rbac:snapshot"
 }
 
 func (manager *DefaultManager) GetItem(name string) Item {
@@ -184,7 +208,7 @@ func (manager *DefaultManager) getChildrenList() map[string][]string {
 
 	for _, child := range list {
 		if m[child.Parent] == nil {
-			m[child.Parent] = make([]string, 1)
+			m[child.Parent] = make([]string, 0)
 		}
 		m[child.Parent] = append(m[child.Parent], child.Child)
 	}
@@ -318,7 +342,7 @@ func (manager *DefaultManager) AddChild(parent Item, child Item) error {
 }
 
 func (manager *DefaultManager) RemoveChild(parent Item, child Item) bool {
-	err := manager.mapper.RemoveChildren(parent.GetName())
+	err := manager.mapper.RemoveChild(parent.GetName(), child.GetName())
 	if err == nil {
 		manager.resetAllCache()
 	}
@@ -576,6 +600,13 @@ func (manager *DefaultManager) loadFromCache() {
 
 	manager.cache.invalidateCache()
 
+	if manager.cacheStore != nil {
+		ctx := context.Background()
+		if manager.loadSnapshotFromStore(ctx) {
+			return
+		}
+	}
+
 	rules, err2 := manager.mapper.GetRules()
 	if err2 == nil {
 		for _, rule := range rules {
@@ -608,6 +639,93 @@ func (manager *DefaultManager) loadFromCache() {
 			manager.cache.parents[child] = append(manager.cache.parents[child], authItemChild.Parent)
 		}
 	}
+
+	if manager.cacheStore != nil {
+		_ = manager.saveSnapshotToStore(context.Background())
+	}
+}
+
+func (manager *DefaultManager) loadSnapshotFromStore(ctx context.Context) bool {
+	payload, ok, err := manager.cacheStore.Get(ctx, manager.cacheSnapshotKey())
+	if err != nil || !ok || len(payload) == 0 {
+		return false
+	}
+
+	var snap cacheSnapshot
+	if err := json.Unmarshal(payload, &snap); err != nil {
+		return false
+	}
+	if snap.Version != cacheSnapshotVersion {
+		return false
+	}
+
+	manager.cache.invalidateCache()
+
+	for _, rule := range snap.Rules {
+		manager.cache.rules[rule.Name] = NewRule(rule.Name, rule.ExecuteName, rule.CreateTime, rule.UpdateTime)
+	}
+
+	for _, it := range snap.Items {
+		var item Item
+		if it.Type == RoleType.Value() {
+			item = NewRole(it.Name, it.Description, it.RuleName, it.ExecuteName, it.CreateTime, it.UpdateTime)
+		} else if it.Type == PermissionType.Value() {
+			item = NewPermission(it.Name, it.Description, it.RuleName, it.ExecuteName, it.CreateTime, it.UpdateTime)
+		} else {
+			continue
+		}
+		manager.cache.items[item.GetName()] = item
+	}
+
+	if snap.Parents != nil {
+		manager.cache.parents = snap.Parents
+	}
+	if manager.cache.parents == nil {
+		manager.cache.parents = make(map[string][]string)
+	}
+
+	return len(manager.cache.items) > 0
+}
+
+func (manager *DefaultManager) saveSnapshotToStore(ctx context.Context) error {
+	if manager.cacheStore == nil {
+		return nil
+	}
+
+	items := make([]cacheSnapshotItem, 0, len(manager.cache.items))
+	for _, item := range manager.cache.items {
+		items = append(items, cacheSnapshotItem{
+			Name:        item.GetName(),
+			Type:        item.GetType().Value(),
+			Description: item.GetDescription(),
+			RuleName:    item.GetRuleName(),
+			ExecuteName: item.GetExecuteName(),
+			CreateTime:  item.GetCreateTime(),
+			UpdateTime:  item.GetUpdateTime(),
+		})
+	}
+
+	rules := make([]cacheSnapshotRule, 0, len(manager.cache.rules))
+	for _, rule := range manager.cache.rules {
+		rules = append(rules, cacheSnapshotRule{
+			Name:        rule.Name,
+			ExecuteName: rule.ExecuteName,
+			CreateTime:  rule.CreateTime,
+			UpdateTime:  rule.UpdateTime,
+		})
+	}
+
+	snap := cacheSnapshot{
+		Version: cacheSnapshotVersion,
+		Items:   items,
+		Rules:   rules,
+		Parents: manager.cache.parents,
+	}
+	payload, err := json.Marshal(snap)
+	if err != nil {
+		return err
+	}
+	return manager.cacheStore.Set(ctx, manager.cacheSnapshotKey(), payload, manager.cacheTTL)
 }
 
 func (manager *DefaultManager) checkAccessFromCache(ctx context.Context, userId interface{}, itemName string, assignments map[string]*Assignment) bool {
@@ -816,4 +934,8 @@ func (manager *DefaultManager) resetAllCache() {
 
 	// 清 RBAC 结构缓存
 	manager.cache.invalidateCache()
+
+	if manager.cacheStore != nil {
+		_ = manager.cacheStore.Del(context.Background(), manager.cacheSnapshotKey())
+	}
 }

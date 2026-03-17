@@ -20,7 +20,7 @@
 ## 安装
 
 ```bash
-go get github.com/kodar/gorbac
+go get github.com/kordar/gorbac
 ```
 
 ------
@@ -87,7 +87,7 @@ import (
     "context"
     "fmt"
 
-    "github.com/yourusername/gorbac"
+    "github.com/kordar/gorbac"
 )
 
 func main() {
@@ -168,6 +168,41 @@ gorbac.ExecuteManager.AddExecutor(&DemoExecutor{})
 
 - 将 `RuleName` 绑定到角色或权限上
 - 在 `CheckAccess` 时动态执行规则
+
+### Redis 缓存（可选）
+
+gorbac 内置缓存默认是进程内缓存，用于加速权限树解析与权限检查。如果你希望在多实例部署时复用缓存，可配置一个外部缓存存储（例如 Redis）来缓存 RBAC 快照（items/rules/parents），从而减少冷启动时的数据库/存储加载压力。
+
+```go
+package main
+
+import (
+    "time"
+
+    "github.com/kordar/gorbac"
+    gorbac_redis "github.com/kordar/gorbac-redis"
+    "github.com/redis/go-redis/v9"
+)
+
+func main() {
+    repo := NewYourAuthRepository()
+
+    rdb := redis.NewClient(&redis.Options{
+        Addr: "127.0.0.1:6379",
+    })
+    store := gorbac_redis.NewRedisCacheStore(rdb)
+
+    service := gorbac.NewRbacServiceWithCacheStore(
+        repo,
+        true,
+        store,
+        "myapp",
+        10*time.Minute,
+    )
+
+    _ = service
+}
+```
 
 ------
 
