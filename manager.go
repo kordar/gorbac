@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
-
-	logger "github.com/kordar/gologger"
 )
 
 const cacheSnapshotVersion = 1
 
 type DefaultManager struct {
-	mapper AuthRepository
-	cache  *DefaultCache
+	mapper         AuthRepository
+	cache          *DefaultCache
 	cacheStore     CacheStore
 	cacheKeyPrefix string
 	cacheTTL       time.Duration
@@ -67,7 +66,7 @@ func (manager *DefaultManager) GetItem(name string) Item {
 func (manager *DefaultManager) getItems(itemType ItemType) []Item {
 	items, err := manager.mapper.GetItemsByType(itemType)
 	if err != nil {
-		logger.Warnf("Error getting items: %s", err.Error())
+		slog.Warn("Error getting items", "err", err)
 		return make([]Item, 0)
 	}
 	return items
@@ -170,7 +169,7 @@ func (manager *DefaultManager) GetRolesByUser(userId interface{}) []*Role {
 func (manager *DefaultManager) GetChildRoles(roleName string) []*Role {
 	role := manager.GetRole(roleName)
 	if role == nil {
-		logger.Infof("[rbac] Role %s not found manager.", roleName)
+		slog.Info("[rbac] Role not found manager.", "role", roleName)
 		return nil
 	}
 
@@ -202,7 +201,7 @@ func (manager *DefaultManager) getChildrenList() map[string][]string {
 	m := make(map[string][]string)
 	list, err := manager.mapper.FindChildrenList()
 	if err != nil {
-		logger.Warnf("[rbac] get children list err=%v", err)
+		slog.Warn("[rbac] get children list error", "err", err)
 		return m
 	}
 
@@ -452,7 +451,7 @@ func (manager *DefaultManager) GetUserIdsByRole(roleName string) []interface{} {
 	users := make([]interface{}, 0)
 	authAssignments, err := manager.mapper.GetAssignmentsByItem(roleName)
 	if err != nil {
-		logger.Warnf("[rbac] GetUserIdsByRole err = %v", err)
+		slog.Warn("[rbac] GetUserIdsByRole error", "err", err)
 		return users
 	}
 
@@ -573,7 +572,7 @@ func (manager *DefaultManager) CheckAccess(
 
 func (manager *DefaultManager) loadFromCache() {
 	if !manager.cache.enable {
-		logger.Warn("[rbac] load from cache skip!")
+		slog.Warn("[rbac] load from cache skip!")
 		return
 	}
 
@@ -616,7 +615,7 @@ func (manager *DefaultManager) loadFromCache() {
 
 	authItems, err := manager.mapper.FindAllItems()
 	if err != nil {
-		logger.Warnf("[rbac] LoadFromCache [findAllItems err] = %v", err)
+		slog.Warn("[rbac] LoadFromCache findAllItems error", "err", err)
 		return
 	}
 
@@ -626,7 +625,7 @@ func (manager *DefaultManager) loadFromCache() {
 
 	authItemChildren, err := manager.mapper.FindChildrenList()
 	if err != nil {
-		logger.Warnf("[rbac] LoadFromCache [FindChildrenList err] = %v", err)
+		slog.Warn("[rbac] LoadFromCache FindChildrenList error", "err", err)
 		return
 	}
 
@@ -747,7 +746,7 @@ func (manager *DefaultManager) checkAccessFromCache(ctx context.Context, userId 
 	if item.GetRuleName() != "" {
 		rule := manager.GetRule(item.GetRuleName())
 		if rule == nil {
-			logger.Warnf("the rule named '%s' does not exist.", item.GetRuleName())
+			slog.Warn("rule does not exist", "rule", item.GetRuleName())
 			return false
 		}
 		executor := rule.GetExecutor()
@@ -777,7 +776,7 @@ func (manager *DefaultManager) checkAccessRecursive(ctx context.Context, userId 
 
 	item, err2 := manager.mapper.GetItem(itemName)
 	if err2 != nil {
-		logger.Warnf("the item named '%s' does not exist.", itemName)
+		slog.Warn("item does not exist", "item", itemName)
 		return false
 	}
 
@@ -791,7 +790,7 @@ func (manager *DefaultManager) checkAccessRecursive(ctx context.Context, userId 
 	if item.GetRuleName() != "" {
 		rule := manager.GetRule(item.GetRuleName())
 		if rule == nil {
-			logger.Warnf("the rule named '%s' does not exist.", item.GetRuleName())
+			slog.Warn("rule does not exist", "rule", item.GetRuleName())
 			return false
 		}
 		executor := rule.GetExecutor()

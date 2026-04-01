@@ -2,7 +2,7 @@ package gorbac
 
 import (
 	"context"
-	log "github.com/kordar/gologger"
+	"log/slog"
 )
 
 type Executor interface {
@@ -35,8 +35,8 @@ func (d *DemoExecutor) Name() string {
 }
 
 func (d *DemoExecutor) Execute(ctx context.Context, userId interface{}, item Item) bool {
-	log.Info("============================================")
-	log.Info("==============DEMO===============")
-	log.Info("============================================")
+	slog.Info("============================================")
+	slog.Info("==============DEMO===============")
+	slog.Info("============================================")
 	return true
 }
